@@ -82,6 +82,66 @@
         .pasted-preview img {
             border: 1px solid #dee2e6;
         }
+        .pasted-item {
+            position: relative;
+            display: inline-block;
+        }
+        .pasted-item .delete-pasted {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #dc3545;
+            color: white;
+            border: none;
+            font-size: 10px;
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .pasted-item .delete-pasted:hover {
+            background: #bb2d3b;
+        }
+        .image-thumb {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .image-thumb:hover, .image-thumb.active {
+            border-color: #0d6efd;
+            transform: scale(1.05);
+        }
+        .image-thumb-container {
+            position: relative;
+        }
+        .image-thumb-container .delete-thumb {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #dc3545;
+            color: white;
+            border: 2px solid white;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+        .btn-view-images {
+            padding: 2px 6px;
+            font-size: 0.75rem;
+        }
     </style>
 </head>
 <body>
@@ -277,6 +337,37 @@
                     <button type="button" class="btn btn-primary" id="createFromPreview">
                         <i class="bi bi-cloud-upload"></i> Oluştur
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Görsel Önizleme Modal -->
+    <div class="modal fade" id="imagePreviewModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title"><i class="bi bi-images"></i> Görseller</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <!-- Sol taraf: Küçük resimler -->
+                        <div class="col-md-3 border-end" style="max-height:500px; overflow-y:auto;">
+                            <div class="d-flex flex-wrap gap-2" id="imageThumbnails">
+                                <!-- Küçük resimler buraya eklenecek -->
+                            </div>
+                        </div>
+                        <!-- Sağ taraf: Büyük önizleme -->
+                        <div class="col-md-9 text-center d-flex align-items-center justify-content-center" style="min-height:400px;">
+                            <div id="imageLargePreview">
+                                <p class="text-muted">Görüntülemek için bir görsel seçin</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
                 </div>
             </div>
         </div>
@@ -740,9 +831,14 @@
                             placeholder="nın HTML kodlarının dönüşümü yapılacaktır">${descSuffix}</textarea>
                     </td>
                     <td class="paste-zone" tabindex="0" style="cursor:pointer;">
-                        <input type="file" class="form-control form-control-sm task-image"
-                            accept="image/*" multiple>
-                        <div class="paste-hint text-muted small mt-1">
+                        <div class="d-flex align-items-center gap-1 mb-1">
+                            <input type="file" class="form-control form-control-sm task-image"
+                                accept="image/*" multiple style="flex:1;">
+                            <button type="button" class="btn btn-outline-info btn-view-images" title="Görselleri Görüntüle">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                        <div class="paste-hint text-muted small">
                             <i class="bi bi-clipboard"></i> Ctrl+V ile yapıştır
                         </div>
                         <div class="pasted-preview mt-1"></div>
@@ -765,6 +861,12 @@
                 updateFileInfo($row);
             });
 
+            // Göz ikonuna tıkla - görselleri modal'da göster
+            $row.find('.btn-view-images').on('click', function(e) {
+                e.stopPropagation();
+                openImagePreviewModal($row);
+            });
+
             // Yapıştırma olayı (paste zone'a tıklayınca focus al)
             $row.find('.paste-zone').on('paste', function(e) {
                 const items = (e.originalEvent.clipboardData || e.clipboardData).items;
@@ -775,15 +877,24 @@
                         const file = new File([blob], `screenshot_${timestamp}.png`, { type: blob.type });
 
                         const currentRowId = $row.data('id');
+                        const fileIndex = window.pastedFiles[currentRowId].length;
                         window.pastedFiles[currentRowId].push(file);
 
-                        // Önizleme göster
+                        // Önizleme göster (silme butonu ile)
                         const reader = new FileReader();
-                        reader.onload = function(e) {
+                        reader.onload = function(ev) {
                             $row.find('.pasted-preview').append(
-                                `<img src="${e.target.result}" class="img-thumbnail me-1 mb-1"
-                                    style="max-width:60px;max-height:40px;" title="${file.name}">`
+                                `<span class="pasted-item" data-index="${fileIndex}">
+                                    <img src="${ev.target.result}" class="img-thumbnail"
+                                        style="max-width:50px;max-height:35px;" title="${file.name}">
+                                    <button type="button" class="delete-pasted" title="Sil">&times;</button>
+                                </span>`
                             );
+                            // Silme butonu olayı
+                            $row.find(`.pasted-item[data-index="${fileIndex}"] .delete-pasted`).on('click', function(ev) {
+                                ev.stopPropagation();
+                                deletePastedImage($row, fileIndex);
+                            });
                         };
                         reader.readAsDataURL(blob);
 
@@ -794,12 +905,102 @@
             });
         }
 
+        // Yapıştırılan görseli sil
+        function deletePastedImage($row, index) {
+            const rowId = $row.data('id');
+            if (window.pastedFiles[rowId]) {
+                window.pastedFiles[rowId][index] = null; // null yap (index'leri bozmamak için)
+                $row.find(`.pasted-item[data-index="${index}"]`).remove();
+                updateFileInfo($row);
+            }
+        }
+
+        // Görsel önizleme modal'ını aç
+        function openImagePreviewModal($row) {
+            const rowId = $row.data('id');
+            const fileInput = $row.find('.task-image')[0];
+            const selectedFiles = fileInput ? Array.from(fileInput.files) : [];
+            const pastedFilesList = (window.pastedFiles[rowId] || []).filter(f => f !== null);
+
+            const allFiles = [...selectedFiles, ...pastedFilesList];
+
+            if (allFiles.length === 0) {
+                showResult('Bu task\'ta henüz görsel yok.', 'info');
+                return;
+            }
+
+            const $thumbnails = $('#imageThumbnails');
+            const $largePreview = $('#imageLargePreview');
+            $thumbnails.empty();
+            $largePreview.html('<p class="text-muted">Görüntülemek için bir görsel seçin</p>');
+
+            // Thumbnails oluştur
+            allFiles.forEach((file, index) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const isPasted = index >= selectedFiles.length;
+                    const $container = $(`
+                        <div class="image-thumb-container mb-2">
+                            <img src="${e.target.result}" class="image-thumb rounded" data-index="${index}" title="${file.name}">
+                            <button type="button" class="delete-thumb" data-index="${index}" data-pasted="${isPasted}" title="Sil">&times;</button>
+                        </div>
+                    `);
+                    $thumbnails.append($container);
+
+                    // İlk görseli büyük göster
+                    if (index === 0) {
+                        showLargeImage(e.target.result, file.name);
+                        $container.find('.image-thumb').addClass('active');
+                    }
+
+                    // Thumbnail tıklama
+                    $container.find('.image-thumb').on('click', function() {
+                        $('.image-thumb').removeClass('active');
+                        $(this).addClass('active');
+                        showLargeImage(e.target.result, file.name);
+                    });
+
+                    // Silme butonu (sadece yapıştırılanlar için çalışır)
+                    $container.find('.delete-thumb').on('click', function() {
+                        const idx = $(this).data('index');
+                        const isPastedFile = $(this).data('pasted');
+                        if (isPastedFile) {
+                            const pastedIdx = idx - selectedFiles.length;
+                            deletePastedImage($row, pastedIdx);
+                            $(this).parent().remove();
+                            // İlk kalan görseli göster
+                            const $remaining = $('.image-thumb:first');
+                            if ($remaining.length) {
+                                $remaining.addClass('active').click();
+                            } else {
+                                $largePreview.html('<p class="text-muted">Görsel kalmadı</p>');
+                            }
+                        } else {
+                            showResult('Seçilen dosyalar tarayıcı güvenliği nedeniyle silinemez. Dosya seçiciyi temizleyip tekrar seçin.', 'warning');
+                        }
+                    });
+                };
+                reader.readAsDataURL(file);
+            });
+
+            // Modal'ı aç
+            new bootstrap.Modal('#imagePreviewModal').show();
+        }
+
+        // Büyük görsel göster
+        function showLargeImage(src, name) {
+            $('#imageLargePreview').html(`
+                <img src="${src}" class="img-fluid rounded shadow" style="max-height:450px;" title="${name}">
+                <p class="mt-2 text-muted small">${name}</p>
+            `);
+        }
+
         // Dosya bilgisini güncelle
         function updateFileInfo($row) {
             const fileInput = $row.find('.task-image')[0];
             const selectedFiles = fileInput ? fileInput.files.length : 0;
             const rowId = $row.data('id');
-            const pastedCount = window.pastedFiles[rowId] ? window.pastedFiles[rowId].length : 0;
+            const pastedCount = window.pastedFiles[rowId] ? window.pastedFiles[rowId].filter(f => f !== null).length : 0;
             const total = selectedFiles + pastedCount;
 
             const info = $row.find('.task-image-info');
@@ -851,7 +1052,7 @@
                 const descSuffix = $row.find('.task-desc').val().trim();
                 const fileInput = $row.find('.task-image')[0];
                 const selectedFiles = fileInput ? Array.from(fileInput.files) : [];
-                const pastedFilesList = window.pastedFiles[rowId] || [];
+                const pastedFilesList = (window.pastedFiles[rowId] || []).filter(f => f !== null);
 
                 // Seçilen ve yapıştırılan dosyaları birleştir
                 const allFiles = [...selectedFiles, ...pastedFilesList];
