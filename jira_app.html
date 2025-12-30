@@ -66,6 +66,22 @@
             background: #dc3545;
             color: white;
         }
+        .paste-zone {
+            border: 2px dashed transparent;
+            transition: all 0.2s;
+        }
+        .paste-zone:focus {
+            border-color: #0d6efd;
+            background-color: #f0f7ff;
+            outline: none;
+        }
+        .paste-zone:focus .paste-hint {
+            color: #0d6efd !important;
+            font-weight: 500;
+        }
+        .pasted-preview img {
+            border: 1px solid #dee2e6;
+        }
     </style>
 </head>
 <body>
@@ -700,12 +716,17 @@
         // ==================== Dinamik Task Tablosu ====================
 
         let taskCounter = 0;
+        // Yapıştırılan dosyaları sakla (file input'a programatik eklenemez)
+        window.pastedFiles = {};
 
         function addTaskRow(titleSuffix = '', hours = '3', descSuffix = '') {
             taskCounter++;
+            const rowId = taskCounter;
+            window.pastedFiles[rowId] = [];
+
             const row = `
-                <tr class="task-row" data-id="${taskCounter}">
-                    <td class="text-center align-middle">${taskCounter}</td>
+                <tr class="task-row" data-id="${rowId}">
+                    <td class="text-center align-middle">${rowId}</td>
                     <td>
                         <input type="text" class="form-control task-title"
                             placeholder="html kodlarının dönüştürülmesi" value="${titleSuffix}">
@@ -718,9 +739,13 @@
                         <textarea class="form-control task-desc" rows="2"
                             placeholder="nın HTML kodlarının dönüşümü yapılacaktır">${descSuffix}</textarea>
                     </td>
-                    <td>
+                    <td class="paste-zone" tabindex="0" style="cursor:pointer;">
                         <input type="file" class="form-control form-control-sm task-image"
                             accept="image/*" multiple>
+                        <div class="paste-hint text-muted small mt-1">
+                            <i class="bi bi-clipboard"></i> Ctrl+V ile yapıştır
+                        </div>
+                        <div class="pasted-preview mt-1"></div>
                         <small class="text-muted task-image-info"></small>
                     </td>
                     <td class="text-center align-middle">
@@ -733,20 +758,69 @@
             $('#taskTableBody').append(row);
             updateRowNumbers();
 
+            const $row = $(`#taskTableBody tr:last`);
+
             // Dosya seçildiğinde bilgi göster
-            $(`#taskTableBody tr:last .task-image`).on('change', function() {
-                const files = this.files;
-                const info = $(this).siblings('.task-image-info');
-                if (files.length > 0) {
-                    info.text(`${files.length} dosya seçildi`);
-                } else {
-                    info.text('');
+            $row.find('.task-image').on('change', function() {
+                updateFileInfo($row);
+            });
+
+            // Yapıştırma olayı (paste zone'a tıklayınca focus al)
+            $row.find('.paste-zone').on('paste', function(e) {
+                const items = (e.originalEvent.clipboardData || e.clipboardData).items;
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf('image') !== -1) {
+                        const blob = items[i].getAsFile();
+                        const timestamp = new Date().getTime();
+                        const file = new File([blob], `screenshot_${timestamp}.png`, { type: blob.type });
+
+                        const currentRowId = $row.data('id');
+                        window.pastedFiles[currentRowId].push(file);
+
+                        // Önizleme göster
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            $row.find('.pasted-preview').append(
+                                `<img src="${e.target.result}" class="img-thumbnail me-1 mb-1"
+                                    style="max-width:60px;max-height:40px;" title="${file.name}">`
+                            );
+                        };
+                        reader.readAsDataURL(blob);
+
+                        updateFileInfo($row);
+                        e.preventDefault();
+                    }
                 }
             });
         }
 
+        // Dosya bilgisini güncelle
+        function updateFileInfo($row) {
+            const fileInput = $row.find('.task-image')[0];
+            const selectedFiles = fileInput ? fileInput.files.length : 0;
+            const rowId = $row.data('id');
+            const pastedCount = window.pastedFiles[rowId] ? window.pastedFiles[rowId].length : 0;
+            const total = selectedFiles + pastedCount;
+
+            const info = $row.find('.task-image-info');
+            if (total > 0) {
+                let text = '';
+                if (selectedFiles > 0) text += `${selectedFiles} seçili`;
+                if (pastedCount > 0) text += (text ? ' + ' : '') + `${pastedCount} yapıştırılmış`;
+                info.text(text);
+            } else {
+                info.text('');
+            }
+        }
+
         window.deleteRow = function(btn) {
-            $(btn).closest('tr').remove();
+            const $row = $(btn).closest('tr');
+            const rowId = $row.data('id');
+            // Yapıştırılan dosyaları temizle
+            if (window.pastedFiles[rowId]) {
+                delete window.pastedFiles[rowId];
+            }
+            $row.remove();
             updateRowNumbers();
         };
 
@@ -770,18 +844,24 @@
             const descPrefix = $('#descriptionPrefix').val().trim();
 
             $('#taskTableBody tr').each(function() {
-                const titleSuffix = $(this).find('.task-title').val().trim();
-                const hours = $(this).find('.task-hours').val().trim();
-                const descSuffix = $(this).find('.task-desc').val().trim();
-                const fileInput = $(this).find('.task-image')[0];
-                const files = fileInput ? fileInput.files : [];
+                const $row = $(this);
+                const rowId = $row.data('id');
+                const titleSuffix = $row.find('.task-title').val().trim();
+                const hours = $row.find('.task-hours').val().trim();
+                const descSuffix = $row.find('.task-desc').val().trim();
+                const fileInput = $row.find('.task-image')[0];
+                const selectedFiles = fileInput ? Array.from(fileInput.files) : [];
+                const pastedFilesList = window.pastedFiles[rowId] || [];
+
+                // Seçilen ve yapıştırılan dosyaları birleştir
+                const allFiles = [...selectedFiles, ...pastedFilesList];
 
                 if (titleSuffix) {
                     tasks.push({
                         summary: titlePrefix ? `${titlePrefix} ${titleSuffix}` : titleSuffix,
                         description: descPrefix ? `${descPrefix} ${descSuffix}` : descSuffix,
                         hours: hours || '3',
-                        files: Array.from(files)
+                        files: allFiles
                     });
                 }
             });
