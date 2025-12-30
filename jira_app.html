@@ -1072,6 +1072,45 @@
 
         // ==================== Önizleme ====================
 
+        // Ortak ayarları dinamik olarak sayfadan topla
+        function collectCommonSettings() {
+            const settings = [];
+
+            // Ortak Task Bilgileri kartındaki tüm form elemanlarını otomatik tara
+            // Card header'ı "Ortak Task Bilgileri" olan kartı bul
+            const $commonCard = $('.card-header:contains("Ortak Task Bilgileri")').closest('.card');
+
+            // Karttaki tüm select ve input elemanlarını tara (buton ve textarea hariç)
+            $commonCard.find('select, input:not([type="button"])').each(function() {
+                const $el = $(this);
+                const id = $el.attr('id');
+
+                // Prefix/description alanlarını atla (ayrı gösterilecek)
+                if (id === 'titlePrefix' || id === 'descriptionPrefix') return;
+
+                const $label = $el.closest('.mb-3').find('.form-label');
+                const labelText = $label.text().replace('*', '').replace(/\s+/g, ' ').trim();
+                let value = '';
+
+                if ($el.is('select')) {
+                    const selectedOption = $el.find('option:selected');
+                    value = selectedOption.text();
+                    // Placeholder seçiliyse boş göster
+                    if (selectedOption.val() === '' || value.startsWith('--') || value.includes('Seçin')) {
+                        value = '';
+                    }
+                } else {
+                    value = $el.val();
+                }
+
+                if (labelText && labelText !== '') {
+                    settings.push({ label: labelText, value: value || '-' });
+                }
+            });
+
+            return settings;
+        }
+
         $('#previewBtn').click(function() {
             const tasks = collectTaskData();
 
@@ -1080,19 +1119,24 @@
                 return;
             }
 
-            const projectKey = $('#projectKey option:selected').text() || $('#projectKey').val();
-            const component = $('#component').val();
-            const epicLink = $('#epicLink option:selected').text() || $('#epicLink').val();
-            const priority = $('#priority').val();
+            // Ortak ayarları dinamik olarak al
+            const commonSettings = collectCommonSettings();
+            const titlePrefix = $('#titlePrefix').val().trim();
+            const descPrefix = $('#descriptionPrefix').val().trim();
 
-            let html = `
-                <div class="alert alert-info">
-                    <strong>Proje:</strong> ${projectKey}<br>
-                    <strong>Bileşen:</strong> ${component || '-'}<br>
-                    <strong>Epic:</strong> ${epicLink || '-'}<br>
-                    <strong>Öncelik:</strong> ${priority || '-'}
-                </div>
-            `;
+            // Ortak bilgiler bölümü
+            let settingsHtml = commonSettings.map(s =>
+                `<strong>${s.label}:</strong> ${s.value}`
+            ).join('<br>');
+
+            if (titlePrefix) {
+                settingsHtml += `<br><strong>Title Başlangıcı:</strong> ${titlePrefix}`;
+            }
+            if (descPrefix) {
+                settingsHtml += `<br><strong>Açıklama Başlangıcı:</strong> ${descPrefix.substring(0, 50)}${descPrefix.length > 50 ? '...' : ''}`;
+            }
+
+            let html = `<div class="alert alert-info">${settingsHtml}</div>`;
 
             tasks.forEach((task, index) => {
                 const fileCount = task.files ? task.files.length : 0;
