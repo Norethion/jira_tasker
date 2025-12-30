@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jira Task Oluşturucu (Python Backend)</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Select2 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f5f5f5;
+            padding-bottom: 50px;
+        }
+        .card {
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .card-header {
+            font-weight: 600;
+        }
+        .card-header.collapsible {
+            cursor: pointer;
+        }
+        .task-row input, .task-row textarea {
+            font-size: 0.9rem;
+        }
+        .btn-delete {
+            padding: 0.25rem 0.5rem;
+        }
+        .saved-badge {
+            font-size: 0.8rem;
+        }
+        #resultArea {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .task-preview {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+        .spinner-border-sm {
+            width: 1rem;
+            height: 1rem;
+        }
+        .server-status {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            z-index: 1000;
+        }
+        .server-status.connected {
+            background: #198754;
+            color: white;
+        }
+        .server-status.disconnected {
+            background: #dc3545;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <!-- Server Status Badge -->
+    <div id="serverStatus" class="server-status disconnected">
+        <i class="bi bi-circle-fill"></i> <span>Python Server: Bağlanıyor...</span>
+    </div>
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-dark bg-primary mb-4">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-kanban"></i> Jira Task Oluşturucu
+                <small class="badge bg-success">Python Backend</small>
+            </span>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <!-- Bağlantı Ayarları -->
+        <div class="card">
+            <div class="card-header bg-secondary text-white collapsible" data-bs-toggle="collapse" data-bs-target="#connectionSettings">
+                <i class="bi bi-gear"></i> Bağlantı Ayarları
+                <span id="connectionBadge" class="badge bg-success ms-2 saved-badge" style="display:none;">
+                    <i class="bi bi-check"></i> Kayıtlı
+                </span>
+                <i class="bi bi-chevron-down float-end"></i>
+            </div>
+            <div class="collapse show" id="connectionSettings">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Jira Base URL</label>
+                            <input type="url" class="form-control" id="jiraUrl" placeholder="https://jira.sirket.com">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">Username</label>
+                            <input type="text" class="form-control" id="jiraUsername" placeholder="kullanici.adi">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label">API Token / Password</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="jiraToken" placeholder="Token veya şifre">
+                                <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-2 mb-3">
+                            <label class="form-label">Auth Tipi</label>
+                            <select class="form-select" id="authType">
+                                <option value="bearer">Bearer (PAT)</option>
+                                <option value="basic">Basic Auth</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="saveConnection">
+                        <i class="bi bi-save"></i> Kaydet
+                    </button>
+                    <button class="btn btn-success ms-2" id="testConnection">
+                        <i class="bi bi-wifi"></i> Bağlantıyı Test Et
+                    </button>
+                    <button class="btn btn-outline-danger ms-2" id="clearConnection">
+                        <i class="bi bi-trash"></i> Temizle
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ortak Task Bilgileri -->
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <i class="bi bi-file-earmark-text"></i> Ortak Task Bilgileri
+                <button class="btn btn-sm btn-light float-end" id="loadFromApi" title="API'den Yükle">
+                    <i class="bi bi-cloud-download"></i> API'den Yükle
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Proje</label>
+                        <select class="form-select" id="projectKey">
+                            <option value="">-- Proje Seçin --</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Bileşen</label>
+                        <select class="form-select" id="component">
+                            <option value="">-- Bileşen Seçin --</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Müşteri <span class="text-danger">*</span></label>
+                        <select class="form-select" id="customer">
+                            <option value="">-- Müşteri Seçin --</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Takım Adı <span class="text-danger">*</span></label>
+                        <select class="form-select" id="teamName">
+                            <option value="">-- Takım Seçin --</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Epic Link</label>
+                        <select class="form-select" id="epicLink">
+                            <option value="">-- Epic Seçin --</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Öncelik</label>
+                        <select class="form-select" id="priority">
+                            <option value="">-- Öncelik Seçin --</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Title Başlangıcı</label>
+                        <input type="text" class="form-control" id="titlePrefix"
+                            placeholder="İlan Reklam/Bölge İşlemleri Sayfası içerisinde yer alan">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Açıklama Başlangıcı</label>
+                        <textarea class="form-control" id="descriptionPrefix" rows="2"
+                            placeholder="İlan/Reklam Vergisi Takip Sistemi içerisinde yer alan..."></textarea>
+                    </div>
+                </div>
+                <button class="btn btn-info text-white" id="saveCommonSettings">
+                    <i class="bi bi-save"></i> Ortak Ayarları Kaydet
+                </button>
+            </div>
+        </div>
+
+        <!-- Task Listesi -->
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <i class="bi bi-list-task"></i> Task Listesi
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered" id="taskTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:40px">#</th>
+                                <th>Title Sonu</th>
+                                <th style="width:100px">Süre (saat)</th>
+                                <th>Açıklama Sonu</th>
+                                <th style="width:50px">Sil</th>
+                            </tr>
+                        </thead>
+                        <tbody id="taskTableBody">
+                            <!-- Dinamik satırlar buraya eklenecek -->
+                        </tbody>
+                    </table>
+                </div>
+                <button class="btn btn-success" id="addTask">
+                    <i class="bi bi-plus-circle"></i> Task Ekle
+                </button>
+            </div>
+        </div>
+
+        <!-- İşlem Butonları -->
+        <div class="d-flex gap-2 mb-4">
+            <button class="btn btn-warning btn-lg" id="previewBtn">
+                <i class="bi bi-eye"></i> Önizle
+            </button>
+            <button class="btn btn-primary btn-lg" id="createBtn">
+                <i class="bi bi-cloud-upload"></i> Tümünü Oluştur
+            </button>
+        </div>
+
+        <!-- Sonuç Alanı -->
+        <div id="resultArea" class="alert" style="display:none;"></div>
+    </div>
+
+    <!-- Önizleme Modal -->
+    <div class="modal fade" id="previewModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title"><i class="bi bi-eye"></i> Task Önizleme</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="previewContent">
+                    <!-- Önizleme içeriği -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+                    <button type="button" class="btn btn-primary" id="createFromPreview">
+                        <i class="bi bi-cloud-upload"></i> Oluştur
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <!-- Select2 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+    <script>
+    $(document).ready(function() {
+        // ==================== Python Server API URL ====================
+        const API_BASE = ''; // Aynı sunucudan serve edildiği için boş
+
+        // Server status kontrolü
+        function checkServerStatus() {
+            $.ajax({
+                url: '/api/jira/myself',
+                type: 'GET',
+                headers: {
+                    'X-Jira-Url': $('#jiraUrl').val() || 'http://test',
+                    'Authorization': 'Bearer test'
+                },
+                timeout: 3000,
+                success: function() {
+                    $('#serverStatus').removeClass('disconnected').addClass('connected')
+                        .html('<i class="bi bi-circle-fill"></i> <span>Python Server: Bağlı</span>');
+                },
+                error: function(xhr) {
+                    if (xhr.status === 400 || xhr.status === 401 || xhr.status === 500) {
+                        // Server çalışıyor, sadece Jira bağlantısı yok
+                        $('#serverStatus').removeClass('disconnected').addClass('connected')
+                            .html('<i class="bi bi-circle-fill"></i> <span>Python Server: Bağlı</span>');
+                    } else {
+                        $('#serverStatus').removeClass('connected').addClass('disconnected')
+                            .html('<i class="bi bi-circle-fill"></i> <span>Python Server: Bağlantı Yok!</span>');
+                    }
+                }
+            });
+        }
+
+        // Sayfa yüklenince ve her 10 saniyede server kontrol et
+        checkServerStatus();
+        setInterval(checkServerStatus, 10000);
+
+        // ==================== Select2 Initialize ====================
+        const select2Config = {
+            theme: 'bootstrap-5',
+            width: '100%',
+            allowClear: true,
+            placeholder: function() {
+                return $(this).data('placeholder');
+            }
+        };
+
+        $('#projectKey').select2({...select2Config, placeholder: '-- Proje Seçin --'});
+        $('#component').select2({...select2Config, placeholder: '-- Bileşen Seçin --'});
+        $('#customer').select2({...select2Config, placeholder: '-- Müşteri Seçin --'});
+        $('#teamName').select2({...select2Config, placeholder: '-- Takım Seçin --'});
+        $('#epicLink').select2({...select2Config, placeholder: '-- Epic Seçin --'});
+        $('#priority').select2({...select2Config, placeholder: '-- Öncelik Seçin --'});
+
+        // ==================== API Helper (Python Backend üzerinden) ====================
+
+        function getAuthHeader() {
+            const username = $('#jiraUsername').val().trim();
+            const token = $('#jiraToken').val().trim();
+            const authType = $('#authType').val();
+
+            if (authType === 'bearer') {
+                return 'Bearer ' + token;
+            } else {
+                return 'Basic ' + btoa(`${username}:${token}`);
+            }
+        }
+
+        function getJiraUrl() {
+            return $('#jiraUrl').val().trim().replace(/\/$/, '');
+        }
+
+        // Python server üzerinden Jira API çağrısı
+        async function jiraFetch(endpoint, options = {}) {
+            const method = options.method || 'GET';
+
+            const ajaxConfig = {
+                url: `/api/jira/${endpoint.replace(/^\//, '')}`,
+                type: method,
+                contentType: 'application/json',
+                headers: {
+                    'X-Jira-Url': getJiraUrl(),
+                    'Authorization': getAuthHeader()
+                }
+            };
+
+            if (options.body) {
+                ajaxConfig.data = options.body;
+            }
+
+            return new Promise((resolve, reject) => {
+                $.ajax({
+                    ...ajaxConfig,
+                    success: function(data) {
+                        resolve(data);
+                    },
+                    error: function(xhr) {
+                        const errorMsg = xhr.responseJSON?.error || xhr.responseText || xhr.statusText;
+                        reject(new Error(`${xhr.status} - ${errorMsg}`));
+                    }
+                });
+            });
+        }
+
+        // ==================== LocalStorage Yönetimi ====================
+
+        function loadConnectionSettings() {
+            const url = localStorage.getItem('jira_url');
+            const username = localStorage.getItem('jira_username');
+            const token = localStorage.getItem('jira_token');
+            const authType = localStorage.getItem('jira_authType');
+
+            if (url) $('#jiraUrl').val(url);
+            if (username) $('#jiraUsername').val(username);
+            if (token) $('#jiraToken').val(token);
+            if (authType) $('#authType').val(authType);
+
+            if (url && token) {
+                $('#connectionBadge').show();
+                $('#connectionSettings').removeClass('show');
+            }
+        }
+
+        function loadCommonSettings() {
+            const projectKey = localStorage.getItem('jira_projectKey');
+            const component = localStorage.getItem('jira_component');
+            const customer = localStorage.getItem('jira_customer');
+            const teamName = localStorage.getItem('jira_teamName');
+            const epicLink = localStorage.getItem('jira_epicLink');
+            const priority = localStorage.getItem('jira_priority');
+            const titlePrefix = localStorage.getItem('jira_titlePrefix');
+            const descPrefix = localStorage.getItem('jira_descPrefix');
+
+            window.savedSettings = { projectKey, component, customer, teamName, epicLink, priority };
+
+            if (titlePrefix) $('#titlePrefix').val(titlePrefix);
+            if (descPrefix) $('#descriptionPrefix').val(descPrefix);
+        }
+
+        loadConnectionSettings();
+        loadCommonSettings();
+
+        function applySavedSettings() {
+            if (window.savedSettings) {
+                if (window.savedSettings.projectKey) {
+                    $('#projectKey').val(window.savedSettings.projectKey).trigger('change');
+                    loadComponents(window.savedSettings.projectKey);
+                    loadEpics(window.savedSettings.projectKey);
+                }
+                if (window.savedSettings.priority) {
+                    $('#priority').val(window.savedSettings.priority).trigger('change');
+                }
+            }
+        }
+
+        function applyComponentAndEpicSettings() {
+            if (window.savedSettings) {
+                if (window.savedSettings.component) {
+                    $('#component').val(window.savedSettings.component).trigger('change');
+                }
+                if (window.savedSettings.epicLink) {
+                    $('#epicLink').val(window.savedSettings.epicLink).trigger('change');
+                }
+            }
+        }
+
+        // Müşteri ve Takım ayarlarını uygula
+        function applyCustomFieldSettings() {
+            if (window.savedSettings) {
+                if (window.savedSettings.customer) {
+                    $('#customer').val(window.savedSettings.customer).trigger('change');
+                }
+                if (window.savedSettings.teamName) {
+                    $('#teamName').val(window.savedSettings.teamName).trigger('change');
+                }
+            }
+        }
+
+        // Bağlantı ayarlarını kaydet
+        $('#saveConnection').click(function() {
+            const url = $('#jiraUrl').val().trim();
+            const username = $('#jiraUsername').val().trim();
+            const token = $('#jiraToken').val().trim();
+            const authType = $('#authType').val();
+
+            if (!url || !token) {
+                showResult('Lütfen URL ve Token bilgilerini doldurun.', 'danger');
+                return;
+            }
+
+            localStorage.setItem('jira_url', url);
+            localStorage.setItem('jira_username', username);
+            localStorage.setItem('jira_token', token);
+            localStorage.setItem('jira_authType', authType);
+
+            $('#connectionBadge').show();
+            showResult('Bağlantı ayarları kaydedildi.', 'success');
+        });
+
+        // Bağlantıyı test et
+        $('#testConnection').click(async function() {
+            const btn = $(this);
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Test Ediliyor...');
+
+            try {
+                await jiraFetch('myself');
+                showResult('Bağlantı başarılı! Python server üzerinden Jira\'ya bağlanıldı.', 'success');
+            } catch (err) {
+                showResult(`Bağlantı hatası: ${err.message}`, 'danger');
+            }
+
+            btn.prop('disabled', false).html('<i class="bi bi-wifi"></i> Bağlantıyı Test Et');
+        });
+
+        // Bağlantı ayarlarını temizle
+        $('#clearConnection').click(function() {
+            localStorage.removeItem('jira_url');
+            localStorage.removeItem('jira_username');
+            localStorage.removeItem('jira_token');
+            localStorage.removeItem('jira_authType');
+
+            $('#jiraUrl').val('');
+            $('#jiraUsername').val('');
+            $('#jiraToken').val('');
+            $('#authType').val('bearer');
+            $('#connectionBadge').hide();
+
+            showResult('Bağlantı ayarları temizlendi.', 'info');
+        });
+
+        // Ortak ayarları kaydet
+        $('#saveCommonSettings').click(function() {
+            localStorage.setItem('jira_projectKey', $('#projectKey').val());
+            localStorage.setItem('jira_component', $('#component').val());
+            localStorage.setItem('jira_customer', $('#customer').val());
+            localStorage.setItem('jira_teamName', $('#teamName').val());
+            localStorage.setItem('jira_epicLink', $('#epicLink').val());
+            localStorage.setItem('jira_priority', $('#priority').val());
+            localStorage.setItem('jira_titlePrefix', $('#titlePrefix').val());
+            localStorage.setItem('jira_descPrefix', $('#descriptionPrefix').val());
+
+            showResult('Ortak ayarlar kaydedildi.', 'success');
+        });
+
+        // Şifre göster/gizle
+        $('#togglePassword').click(function() {
+            const input = $('#jiraToken');
+            const icon = $(this).find('i');
+
+            if (input.attr('type') === 'password') {
+                input.attr('type', 'text');
+                icon.removeClass('bi-eye').addClass('bi-eye-slash');
+            } else {
+                input.attr('type', 'password');
+                icon.removeClass('bi-eye-slash').addClass('bi-eye');
+            }
+        });
+
+        // ==================== API'den Dropdown Yükleme ====================
+
+        async function loadProjects() {
+            const select = $('#projectKey');
+            select.empty().append('<option value="">Yükleniyor...</option>').trigger('change');
+
+            try {
+                const projects = await jiraFetch('project');
+                select.empty().append('<option value="">-- Proje Seçin --</option>');
+
+                projects.forEach(project => {
+                    select.append(`<option value="${project.key}">${project.key} - ${project.name}</option>`);
+                });
+
+                select.trigger('change');
+                applySavedSettings();
+            } catch (err) {
+                select.empty().append('<option value="">Yüklenemedi</option>').trigger('change');
+                console.error('Projeler yüklenemedi:', err);
+            }
+        }
+
+        async function loadComponents(projectKey) {
+            const select = $('#component');
+            select.empty().append('<option value="">Yükleniyor...</option>').trigger('change');
+
+            try {
+                const components = await jiraFetch(`project/${projectKey}/components`);
+                select.empty().append('<option value="">-- Bileşen Seçin --</option>');
+
+                components.forEach(comp => {
+                    select.append(`<option value="${comp.name}">${comp.name}</option>`);
+                });
+
+                select.trigger('change');
+                applyComponentAndEpicSettings();
+            } catch (err) {
+                select.empty().append('<option value="">Yüklenemedi</option>').trigger('change');
+                console.error('Bileşenler yüklenemedi:', err);
+            }
+        }
+
+        async function loadEpics(projectKey) {
+            const select = $('#epicLink');
+            select.empty().append('<option value="">Yükleniyor...</option>').trigger('change');
+
+            try {
+                const jql = encodeURIComponent(`project = ${projectKey} AND issuetype = Epic ORDER BY created DESC`);
+                const result = await jiraFetch(`search?jql=${jql}&maxResults=100&fields=key,summary`);
+
+                select.empty().append('<option value="">-- Epic Seçin --</option>');
+
+                result.issues.forEach(epic => {
+                    select.append(`<option value="${epic.key}">${epic.key} - ${epic.fields.summary}</option>`);
+                });
+
+                select.trigger('change');
+                applyComponentAndEpicSettings();
+            } catch (err) {
+                select.empty().append('<option value="">Yüklenemedi</option>').trigger('change');
+                console.error('Epic\'ler yüklenemedi:', err);
+            }
+        }
+
+        async function loadPriorities() {
+            const select = $('#priority');
+            select.empty().append('<option value="">Yükleniyor...</option>').trigger('change');
+
+            try {
+                const priorities = await jiraFetch('priority');
+                select.empty().append('<option value="">-- Öncelik Seçin --</option>');
+
+                // ID'yi value olarak kullan
+                priorities.forEach(priority => {
+                    select.append(`<option value="${priority.id}">${priority.name}</option>`);
+                });
+
+                if (window.savedSettings && window.savedSettings.priority) {
+                    $('#priority').val(window.savedSettings.priority).trigger('change');
+                } else {
+                    select.trigger('change');
+                }
+            } catch (err) {
+                select.empty().append('<option value="">Yüklenemedi</option>').trigger('change');
+                console.error('Öncelikler yüklenemedi:', err);
+            }
+        }
+
+        // Müşteri ve Takım Adı alanlarını yükle (createmeta'dan)
+        async function loadCustomFields(projectKey) {
+            try {
+                // Create meta endpoint ile alan seçeneklerini al
+                const meta = await jiraFetch(`issue/createmeta?projectKeys=${projectKey}&issuetypeNames=Task&expand=projects.issuetypes.fields`);
+
+                if (meta.projects && meta.projects.length > 0) {
+                    const project = meta.projects[0];
+                    if (project.issuetypes && project.issuetypes.length > 0) {
+                        const taskType = project.issuetypes[0];
+                        const fields = taskType.fields;
+
+                        // Epic Link field ID'sini bul
+                        window.epicLinkFieldId = null;
+                        for (const [fieldId, fieldData] of Object.entries(fields)) {
+                            if (fieldData.name && fieldData.name.toLowerCase().includes('epic link')) {
+                                window.epicLinkFieldId = fieldId;
+                                console.log('Epic Link field ID bulundu:', fieldId);
+                                break;
+                            }
+                        }
+
+                        // Müşteri alanı (customfield_10901)
+                        if (fields.customfield_10901 && fields.customfield_10901.allowedValues) {
+                            const customerSelect = $('#customer');
+                            customerSelect.empty().append('<option value="">-- Müşteri Seçin --</option>');
+                            fields.customfield_10901.allowedValues.forEach(val => {
+                                customerSelect.append(`<option value="${val.value || val.name || val.id}">${val.value || val.name}</option>`);
+                            });
+                            customerSelect.trigger('change');
+                        }
+
+                        // Takım Adı alanı (customfield_11000)
+                        if (fields.customfield_11000 && fields.customfield_11000.allowedValues) {
+                            const teamSelect = $('#teamName');
+                            teamSelect.empty().append('<option value="">-- Takım Seçin --</option>');
+                            fields.customfield_11000.allowedValues.forEach(val => {
+                                teamSelect.append(`<option value="${val.value || val.name || val.id}">${val.value || val.name}</option>`);
+                            });
+                            teamSelect.trigger('change');
+                        }
+
+                        // Kaydedilen değerleri uygula
+                        applyCustomFieldSettings();
+                    }
+                }
+            } catch (err) {
+                console.error('Özel alanlar yüklenemedi:', err);
+            }
+        }
+
+        $('#projectKey').on('change', function() {
+            const projectKey = $(this).val();
+            if (projectKey) {
+                loadComponents(projectKey);
+                loadEpics(projectKey);
+                loadCustomFields(projectKey);  // Müşteri ve Takım alanlarını yükle
+            } else {
+                $('#component').empty().append('<option value="">-- Bileşen Seçin --</option>').trigger('change');
+                $('#epicLink').empty().append('<option value="">-- Epic Seçin --</option>').trigger('change');
+                $('#customer').empty().append('<option value="">-- Müşteri Seçin --</option>').trigger('change');
+                $('#teamName').empty().append('<option value="">-- Takım Seçin --</option>').trigger('change');
+            }
+        });
+
+        $('#loadFromApi').click(async function() {
+            const btn = $(this);
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Yükleniyor...');
+
+            try {
+                await Promise.all([loadProjects(), loadPriorities()]);
+                showResult('Veriler API\'den yüklendi.', 'success');
+            } catch (err) {
+                showResult(`Veri yükleme hatası: ${err.message}`, 'danger');
+            }
+
+            btn.prop('disabled', false).html('<i class="bi bi-cloud-download"></i> API\'den Yükle');
+        });
+
+        // ==================== Dinamik Task Tablosu ====================
+
+        let taskCounter = 0;
+
+        function addTaskRow(titleSuffix = '', hours = '3', descSuffix = '') {
+            taskCounter++;
+            const row = `
+                <tr class="task-row" data-id="${taskCounter}">
+                    <td class="text-center align-middle">${taskCounter}</td>
+                    <td>
+                        <input type="text" class="form-control task-title"
+                            placeholder="html kodlarının dönüştürülmesi" value="${titleSuffix}">
+                    </td>
+                    <td>
+                        <input type="number" class="form-control task-hours"
+                            min="1" value="${hours}">
+                    </td>
+                    <td>
+                        <textarea class="form-control task-desc" rows="2"
+                            placeholder="nın HTML kodlarının dönüşümü yapılacaktır">${descSuffix}</textarea>
+                    </td>
+                    <td class="text-center align-middle">
+                        <button class="btn btn-outline-danger btn-delete" onclick="deleteRow(this)">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+            $('#taskTableBody').append(row);
+            updateRowNumbers();
+        }
+
+        window.deleteRow = function(btn) {
+            $(btn).closest('tr').remove();
+            updateRowNumbers();
+        };
+
+        function updateRowNumbers() {
+            $('#taskTableBody tr').each(function(index) {
+                $(this).find('td:first').text(index + 1);
+            });
+        }
+
+        $('#addTask').click(function() {
+            addTaskRow();
+        });
+
+        addTaskRow();
+
+        // ==================== Task Verilerini Topla ====================
+
+        function collectTaskData() {
+            const tasks = [];
+            const titlePrefix = $('#titlePrefix').val().trim();
+            const descPrefix = $('#descriptionPrefix').val().trim();
+
+            $('#taskTableBody tr').each(function() {
+                const titleSuffix = $(this).find('.task-title').val().trim();
+                const hours = $(this).find('.task-hours').val().trim();
+                const descSuffix = $(this).find('.task-desc').val().trim();
+
+                if (titleSuffix) {
+                    tasks.push({
+                        summary: titlePrefix ? `${titlePrefix} ${titleSuffix}` : titleSuffix,
+                        description: descPrefix ? `${descPrefix} ${descSuffix}` : descSuffix,
+                        hours: hours || '3'
+                    });
+                }
+            });
+
+            return tasks;
+        }
+
+        // ==================== Önizleme ====================
+
+        $('#previewBtn').click(function() {
+            const tasks = collectTaskData();
+
+            if (tasks.length === 0) {
+                showResult('Lütfen en az bir task ekleyin.', 'warning');
+                return;
+            }
+
+            const projectKey = $('#projectKey option:selected').text() || $('#projectKey').val();
+            const component = $('#component').val();
+            const epicLink = $('#epicLink option:selected').text() || $('#epicLink').val();
+            const priority = $('#priority').val();
+
+            let html = `
+                <div class="alert alert-info">
+                    <strong>Proje:</strong> ${projectKey}<br>
+                    <strong>Bileşen:</strong> ${component || '-'}<br>
+                    <strong>Epic:</strong> ${epicLink || '-'}<br>
+                    <strong>Öncelik:</strong> ${priority || '-'}
+                </div>
+            `;
+
+            tasks.forEach((task, index) => {
+                html += `
+                    <div class="task-preview">
+                        <h6><strong>Task ${index + 1}</strong></h6>
+                        <p><strong>Title:</strong> ${task.summary}</p>
+                        <p><strong>Süre:</strong> ${task.hours} saat</p>
+                        <p><strong>Açıklama:</strong> ${task.description || '-'}</p>
+                    </div>
+                `;
+            });
+
+            $('#previewContent').html(html);
+            new bootstrap.Modal('#previewModal').show();
+        });
+
+        // ==================== Jira API Entegrasyonu (Python Backend) ====================
+
+        async function createJiraIssue(task) {
+            const projectKey = $('#projectKey').val();
+            const component = $('#component').val();
+            const epicLink = $('#epicLink').val();
+            const priority = $('#priority').val();
+            const customer = $('#customer').val().trim();
+            const teamName = $('#teamName').val().trim();
+
+            const issueData = {
+                fields: {
+                    project: { key: projectKey },
+                    summary: task.summary,
+                    description: task.description,
+                    issuetype: { name: 'Task' },
+                    timetracking: {
+                        originalEstimate: `${task.hours}h`
+                    }
+                }
+            };
+
+            // Zorunlu özel alanlar (select tipi - obje formatında gönderilmeli)
+            if (customer) {
+                issueData.fields.customfield_10901 = { value: customer };
+            }
+            if (teamName) {
+                issueData.fields.customfield_11000 = { value: teamName };
+            }
+
+            // Öncelik - ID ile gönder
+            if (priority && priority !== '') {
+                issueData.fields.priority = { id: priority };
+            }
+
+            if (component) {
+                issueData.fields.components = [{ name: component }];
+            }
+
+            // Epic Link - dinamik field ID kullan
+            if (epicLink && window.epicLinkFieldId) {
+                issueData.fields[window.epicLinkFieldId] = epicLink;
+            }
+
+            return await jiraFetch('issue', {
+                method: 'POST',
+                body: JSON.stringify(issueData)
+            });
+        }
+
+        async function linkIssues(inwardKey, outwardKey) {
+            const linkData = {
+                type: { name: 'Relates' },
+                inwardIssue: { key: inwardKey },
+                outwardIssue: { key: outwardKey }
+            };
+
+            try {
+                await $.ajax({
+                    url: '/api/jira-link',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    headers: {
+                        'X-Jira-Url': getJiraUrl(),
+                        'Authorization': getAuthHeader()
+                    },
+                    data: JSON.stringify(linkData)
+                });
+                return true;
+            } catch {
+                return false;
+            }
+        }
+
+        async function createAllTasks() {
+            const tasks = collectTaskData();
+
+            if (tasks.length === 0) {
+                showResult('Lütfen en az bir task ekleyin.', 'warning');
+                return;
+            }
+
+            const url = getJiraUrl();
+            const token = $('#jiraToken').val().trim();
+            const projectKey = $('#projectKey').val();
+
+            if (!url || !token) {
+                showResult('Lütfen bağlantı ayarlarını doldurun.', 'danger');
+                return;
+            }
+
+            if (!projectKey) {
+                showResult('Lütfen proje seçin.', 'danger');
+                return;
+            }
+
+            $('#createBtn').prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Oluşturuluyor...');
+
+            const createdKeys = [];
+            const results = [];
+
+            try {
+                for (let i = 0; i < tasks.length; i++) {
+                    try {
+                        const result = await createJiraIssue(tasks[i]);
+                        createdKeys.push(result.key);
+                        results.push({ success: true, key: result.key, summary: tasks[i].summary });
+                    } catch (err) {
+                        results.push({ success: false, error: err.message, summary: tasks[i].summary });
+                    }
+                }
+
+                // Task'ları birbirine bağla
+                if (createdKeys.length > 1) {
+                    for (let i = 0; i < createdKeys.length - 1; i++) {
+                        for (let j = i + 1; j < createdKeys.length; j++) {
+                            await linkIssues(createdKeys[i], createdKeys[j]);
+                        }
+                    }
+                }
+
+                let html = '<h5>Sonuçlar:</h5><ul>';
+                results.forEach(r => {
+                    if (r.success) {
+                        html += `<li class="text-success"><i class="bi bi-check-circle"></i>
+                            <a href="${getJiraUrl()}/browse/${r.key}" target="_blank">${r.key}</a> - ${r.summary}</li>`;
+                    } else {
+                        html += `<li class="text-danger"><i class="bi bi-x-circle"></i>
+                            ${r.summary} - Hata: ${r.error}</li>`;
+                    }
+                });
+                html += '</ul>';
+
+                if (createdKeys.length > 1) {
+                    html += `<p class="mt-2"><i class="bi bi-link-45deg"></i> ${createdKeys.length} task birbirine bağlandı (relates to)</p>`;
+                }
+
+                const hasError = results.some(r => !r.success);
+                showResult(html, hasError ? 'warning' : 'success', false);
+
+            } catch (err) {
+                showResult(`Hata oluştu: ${err.message}`, 'danger');
+            }
+
+            $('#createBtn').prop('disabled', false).html('<i class="bi bi-cloud-upload"></i> Tümünü Oluştur');
+        }
+
+        $('#createBtn').click(createAllTasks);
+        $('#createFromPreview').click(function() {
+            bootstrap.Modal.getInstance('#previewModal').hide();
+            createAllTasks();
+        });
+
+        // ==================== Yardımcı Fonksiyonlar ====================
+
+        function showResult(message, type, isText = true) {
+            const area = $('#resultArea');
+            area.removeClass('alert-success alert-danger alert-warning alert-info')
+                .addClass(`alert-${type}`)
+                .html(message)
+                .show();
+
+            $('html, body').animate({
+                scrollTop: area.offset().top - 100
+            }, 500);
+        }
+
+        // Sayfa yüklendiğinde bağlantı varsa verileri otomatik yükle
+        if ($('#jiraUrl').val() && $('#jiraToken').val()) {
+            setTimeout(() => {
+                $('#loadFromApi').click();
+            }, 1000);
+        }
+    });
+    </script>
+</body>
+</html>

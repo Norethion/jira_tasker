@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe /c where brave)",
+      "Bash(cmd.exe /c dir /s /b \"C:\\\\Program Files\\\\BraveSoftware\\\\brave.exe\")",
+      "Bash(cmd.exe /c dir /s /b \"C:\\\\Program Files \\(x86\\)\\\\BraveSoftware\\\\brave.exe\")",
+      "Bash(cmd.exe /c dir /s /b \"%LOCALAPPDATA%\\\\BraveSoftware\\\\Brave-Browser\\\\Application\\\\brave.exe\")",
+      "Bash(cmd.exe /c dir:*)",
+      "Bash(cmd.exe /c start \"\" \"C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe\" --disable-web-security --disable-site-isolation-trials --user-data-dir=\"C:\\\\tmp\\\\chrome_dev\" \"d:\\\\Profiles\\\\barissamur\\\\Desktop\\\\jira\\\\jira.html\")",
+      "Bash(cmd.exe /c python --version)",
+      "Bash(cmd.exe /c python3 --version)",
+      "Bash(cmd.exe /c \"python --version\")",
+      "Bash(cmd.exe /c \"py --version\")",
+      "Bash(cmd.exe /c \"where python\")"
+    ]
+  }
+}
