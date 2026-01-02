@@ -168,6 +168,33 @@
         .custom-toast.hiding {
             animation: slideOut 0.3s ease forwards;
         }
+        .custom-toast .toast-close-btn {
+            width: 28px;
+            height: 28px;
+            min-width: 28px;
+            padding: 0;
+            border: none;
+            background: transparent;
+            color: #6c757d;
+            cursor: pointer;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            font-size: 16px;
+            transition: all 0.2s;
+            pointer-events: auto;
+            position: relative;
+            z-index: 10;
+        }
+        .custom-toast .toast-close-btn:hover {
+            background: rgba(0,0,0,0.1);
+            color: #000;
+        }
+        .custom-toast .toast-close-btn i {
+            pointer-events: none;
+        }
         /* History */
         .history-item {
             border-left: 3px solid #0d6efd;
@@ -208,10 +235,8 @@
         }
         .history-task-summary {
             color: #495057;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
             flex: 1;
+            word-break: break-word;
         }
         /* History Modal - Sabit Boyut */
         #historyModal .modal-dialog {
@@ -370,6 +395,9 @@
                 <i class="bi bi-list-task"></i> Task Listesi
             </div>
             <div class="card-body">
+                <button class="btn btn-success mb-3" id="addTask">
+                    <i class="bi bi-plus-circle"></i> Task Ekle
+                </button>
                 <div class="table-responsive">
                     <table class="table table-bordered" id="taskTable">
                         <thead class="table-light">
@@ -387,9 +415,6 @@
                         </tbody>
                     </table>
                 </div>
-                <button class="btn btn-success" id="addTask">
-                    <i class="bi bi-plus-circle"></i> Task Ekle
-                </button>
             </div>
         </div>
 
@@ -1466,6 +1491,17 @@
 
         // ==================== Toast Bildirimleri ====================
 
+        // Event delegation - document seviyesinde bir kez bind et
+        $(document).on('click', '.toast-close-btn', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const $toast = $(this).closest('.custom-toast');
+            const toastId = $toast.attr('id');
+            if (toastId) {
+                closeToast(toastId);
+            }
+        });
+
         function showResult(message, type, duration = 5000) {
             const toastId = 'toast_' + Date.now();
             const icons = {
@@ -1480,7 +1516,9 @@
                     <div class="d-flex align-items-start p-3">
                         <i class="bi ${icons[type]} me-2 mt-1"></i>
                         <div class="flex-grow-1">${message}</div>
-                        <button type="button" class="btn-close ms-2" onclick="closeToast('${toastId}')"></button>
+                        <button type="button" class="toast-close-btn" title="Kapat">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
                     </div>
                 </div>
             `);
@@ -1495,8 +1533,10 @@
 
         window.closeToast = function(toastId) {
             const toast = $(`#${toastId}`);
-            toast.addClass('hiding');
-            setTimeout(() => toast.remove(), 300);
+            if (toast.length && !toast.hasClass('hiding')) {
+                toast.addClass('hiding');
+                setTimeout(() => toast.remove(), 300);
+            }
         };
 
         // ==================== Task Geçmişi (History) ====================
@@ -1568,14 +1608,11 @@
                     <ul class="history-task-list">`;
 
                 entry.tasks.forEach(task => {
-                    const shortSummary = task.summary.length > 80
-                        ? task.summary.substring(0, 80) + '...'
-                        : task.summary;
                     html += `<li>
                         <a href="${entry.jiraUrl}/browse/${task.key}" target="_blank" class="history-task-key">
                             <i class="bi bi-box-arrow-up-right"></i> ${task.key}
                         </a>
-                        <span class="history-task-summary" title="${task.summary.replace(/"/g, '&quot;')}">${shortSummary}</span>
+                        <span class="history-task-summary">${task.summary}</span>
                     </li>`;
                 });
 
