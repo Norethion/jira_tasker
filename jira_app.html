@@ -359,6 +359,12 @@
                 </div>
                 <div class="row">
                     <div class="col-md-3 mb-3">
+                        <label class="form-label">Kayıt Tipi</label>
+                        <select class="form-select" id="issueType">
+                            <option value="">-- Kayıt Tipi Seçin --</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-3">
                         <label class="form-label">Epic Link</label>
                         <select class="form-select" id="epicLink">
                             <option value="">-- Epic Seçin --</option>
@@ -566,6 +572,7 @@
         $('#component').select2({...select2Config, placeholder: '-- Bileşen Seçin --'});
         $('#customer').select2({...select2Config, placeholder: '-- Müşteri Seçin --'});
         $('#teamName').select2({...select2Config, placeholder: '-- Takım Seçin --'});
+        $('#issueType').select2({...select2Config, placeholder: '-- Kayıt Tipi Seçin --'});
         $('#epicLink').select2({...select2Config, placeholder: '-- Epic Seçin --'});
         $('#priority').select2({...select2Config, placeholder: '-- Öncelik Seçin --'});
 
@@ -643,12 +650,13 @@
             const component = localStorage.getItem('jira_component');
             const customer = localStorage.getItem('jira_customer');
             const teamName = localStorage.getItem('jira_teamName');
+            const issueType = localStorage.getItem('jira_issueType');
             const epicLink = localStorage.getItem('jira_epicLink');
             const priority = localStorage.getItem('jira_priority');
             const titlePrefix = localStorage.getItem('jira_titlePrefix');
             const descPrefix = localStorage.getItem('jira_descPrefix');
 
-            window.savedSettings = { projectKey, component, customer, teamName, epicLink, priority };
+            window.savedSettings = { projectKey, component, customer, teamName, issueType, epicLink, priority };
 
             if (titlePrefix) $('#titlePrefix').val(titlePrefix);
             if (descPrefix) $('#descriptionPrefix').val(descPrefix);
@@ -751,6 +759,7 @@
             localStorage.setItem('jira_component', $('#component').val());
             localStorage.setItem('jira_customer', $('#customer').val());
             localStorage.setItem('jira_teamName', $('#teamName').val());
+            localStorage.setItem('jira_issueType', $('#issueType').val());
             localStorage.setItem('jira_epicLink', $('#epicLink').val());
             localStorage.setItem('jira_priority', $('#priority').val());
             localStorage.setItem('jira_titlePrefix', $('#titlePrefix').val());
@@ -861,6 +870,37 @@
             }
         }
 
+        // Kayıt tiplerini yükle (proje bazlı)
+        async function loadIssueTypes(projectKey) {
+            const select = $('#issueType');
+            select.empty().append('<option value="">Yükleniyor...</option>').trigger('change');
+
+            try {
+                const project = await jiraFetch(`project/${projectKey}`);
+                select.empty().append('<option value="">-- Kayıt Tipi Seçin --</option>');
+
+                if (project.issueTypes) {
+                    project.issueTypes.forEach(type => {
+                        // Sub-task tipini hariç tut (genellikle ayrı oluşturulur)
+                        if (!type.subtask) {
+                            select.append(`<option value="${type.name}">${type.name}</option>`);
+                        }
+                    });
+                }
+
+                // Kaydedilen değeri uygula
+                if (window.savedSettings && window.savedSettings.issueType) {
+                    $('#issueType').val(window.savedSettings.issueType).trigger('change');
+                } else {
+                    // Varsayılan olarak Task seç
+                    $('#issueType').val('Task').trigger('change');
+                }
+            } catch (err) {
+                select.empty().append('<option value="">Yüklenemedi</option>').trigger('change');
+                console.error('Kayıt tipleri yüklenemedi:', err);
+            }
+        }
+
         // Müşteri ve Takım Adı alanlarını yükle (createmeta'dan)
         async function loadCustomFields(projectKey) {
             try {
@@ -917,10 +957,12 @@
             if (projectKey) {
                 loadComponents(projectKey);
                 loadEpics(projectKey);
+                loadIssueTypes(projectKey);  // Kayıt tiplerini yükle
                 loadCustomFields(projectKey);  // Müşteri ve Takım alanlarını yükle
             } else {
                 $('#component').empty().append('<option value="">-- Bileşen Seçin --</option>').trigger('change');
                 $('#epicLink').empty().append('<option value="">-- Epic Seçin --</option>').trigger('change');
+                $('#issueType').empty().append('<option value="">-- Kayıt Tipi Seçin --</option>').trigger('change');
                 $('#customer').empty().append('<option value="">-- Müşteri Seçin --</option>').trigger('change');
                 $('#teamName').empty().append('<option value="">-- Takım Seçin --</option>').trigger('change');
             }
@@ -1296,6 +1338,7 @@
         async function createJiraIssue(task) {
             const projectKey = $('#projectKey').val();
             const component = $('#component').val();
+            const issueType = $('#issueType').val() || 'Task';
             const epicLink = $('#epicLink').val();
             const priority = $('#priority').val();
             const customer = $('#customer').val().trim();
@@ -1306,7 +1349,7 @@
                     project: { key: projectKey },
                     summary: task.summary,
                     description: task.description,
-                    issuetype: { name: 'Task' },
+                    issuetype: { name: issueType },
                     timetracking: {
                         originalEstimate: `${task.hours}h`
                     }
