@@ -266,6 +266,18 @@
             transition: all 0.2s;
             border: 1px solid transparent;
             font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+        }
+        .page-nav-item .page-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .page-nav-item .badge {
+            margin-left: 8px;
+            flex-shrink: 0;
         }
         .page-nav-item:hover {
             background: #e9ecef;
@@ -275,19 +287,26 @@
             color: white;
             border-color: #0d6efd;
         }
-        .page-nav-item.completed {
-            background: #d1e7dd;
-            border-color: #198754;
+        .page-nav-item.active .page-status-icon i {
+            color: white !important;
         }
-        .page-nav-item.completed .page-status-icon {
+        .page-nav-item.completed {
+            background: #d4edda;
+            border-color: #28a745;
+        }
+        .page-nav-item.completed .page-status-icon i {
             color: #198754;
         }
         .page-nav-item.active.completed {
             background: #198754;
             color: white;
         }
+        .page-nav-item.active.completed .page-status-icon i {
+            color: white !important;
+        }
         .page-status-icon {
             font-size: 0.9rem;
+            flex-shrink: 0;
         }
         .module-header {
             padding: 10px 12px;
@@ -525,12 +544,13 @@
                             <div class="page-path" id="currentPagePath"></div>
                         </div>
 
-                        <!-- Manuel mod: Task Ekle butonu -->
-                        <div class="manual-mode-indicator" id="manualModeControls">
-                            <button class="btn btn-success mb-3" id="addTask">
-                                <i class="bi bi-plus-circle"></i> Task Ekle
-                            </button>
-                        </div>
+                        <!-- Task Ekle butonları - her iki modda da görünür -->
+                        <button class="btn btn-success mb-3" id="addTask">
+                            <i class="bi bi-plus-circle"></i> Task Ekle
+                        </button>
+                        <button class="btn btn-info mb-3 ms-2" id="addTestArayuzTasks">
+                            <i class="bi bi-layers"></i> Test+Arayüz
+                        </button>
 
                         <!-- Task Tablosu (Sadeleştirilmiş) -->
                         <div class="table-responsive">
@@ -1504,6 +1524,36 @@
 
         $('#addTask').click(function() {
             addTaskRow();
+            // JSON modundaysa, yeni task'ı JSON'a ekle ve kaydet
+            if (isJsonMode && currentPageIndex >= 0) {
+                syncUItoJson();
+                if (jsonFileHandle) {
+                    autoSaveJson();
+                }
+            }
+        });
+
+        // Test+Arayüz butonu - iki hazır task ekler
+        $('#addTestArayuzTasks').click(function() {
+            // Test task'ı
+            addTaskRow(
+                'dönüşümü tamamlanmasının ardından test edilecektir',
+                '',
+                'dönüşümünün tamamlanmasının ardından fonksiyonel testleri yapılacaktır.'
+            );
+            // Arayüz task'ı
+            addTaskRow(
+                'Arayüz Giydirme Çalışması',
+                '',
+                'Arayüz Giydirme Çalışması yapılacaktır.'
+            );
+            // JSON modundaysa kaydet
+            if (isJsonMode && currentPageIndex >= 0) {
+                syncUItoJson();
+                if (jsonFileHandle) {
+                    autoSaveJson();
+                }
+            }
         });
 
         addTaskRow();
@@ -1917,17 +1967,37 @@
             var totalCount = loadedJsonData.pages.length;
             $('#pageProgressBadge').text(completedCount + '/' + totalCount);
 
-            // Navigasyondaki ikonları güncelle
+            // Navigasyondaki ikonları ve badge'leri güncelle
             for (var i = 0; i < totalCount; i++) {
                 var $item = $('.page-nav-item[data-page-index="' + i + '"]');
                 var $icon = $item.find('.page-status-icon i');
+                var $badge = $item.find('.badge');
 
-                if (completedPages[i]) {
+                // Sayfa task bilgilerini al
+                var page = loadedJsonData.pages[i];
+                var taskCount = (page.tasks && page.tasks.length) || 0;
+                var createdCount = 0;
+                if (page.tasks) {
+                    for (var t = 0; t < page.tasks.length; t++) {
+                        if (page.tasks[t].created) createdCount++;
+                    }
+                }
+
+                var allTasksCreated = taskCount > 0 && createdCount === taskCount;
+                var someTasksCreated = createdCount > 0;
+
+                if (allTasksCreated || completedPages[i]) {
                     $item.addClass('completed');
-                    $icon.removeClass('bi-circle').addClass('bi-check-circle-fill');
+                    $icon.removeClass('bi-circle bi-check-circle').addClass('bi-check-circle-fill text-success');
+                    $badge.removeClass('bg-light bg-warning text-dark').addClass('bg-success').text(createdCount + '/' + taskCount);
+                } else if (someTasksCreated) {
+                    $item.removeClass('completed');
+                    $icon.removeClass('bi-circle bi-check-circle-fill').addClass('bi-check-circle text-warning');
+                    $badge.removeClass('bg-light bg-success').addClass('bg-warning text-dark').text(createdCount + '/' + taskCount);
                 } else {
                     $item.removeClass('completed');
-                    $icon.removeClass('bi-check-circle-fill').addClass('bi-circle');
+                    $icon.removeClass('bi-check-circle-fill bi-check-circle text-success text-warning').addClass('bi-circle');
+                    $badge.removeClass('bg-success bg-warning').addClass('bg-light text-dark').text(taskCount);
                 }
             }
         }
@@ -1962,16 +2032,35 @@
             if (!loadedJsonData || currentPageIndex < 0) return;
 
             var page = loadedJsonData.pages[currentPageIndex];
-            if (!page || !page.tasks) return;
+            if (!page) return;
+
+            // tasks dizisi yoksa oluştur
+            if (!page.tasks) {
+                page.tasks = [];
+            }
 
             // UI'daki task satırlarını döngüyle gez
             $('#taskTableBody tr').each(function(index) {
-                if (index < page.tasks.length && !page.tasks[index].created) {
-                    // Sadece oluşturulmamış task'ları güncelle
-                    var $row = $(this);
-                    page.tasks[index].titleSuffix = $row.find('.task-title-suffix').val().trim();
-                    page.tasks[index].sure = $row.find('.task-hours').val().trim();
-                    page.tasks[index].descSuffix = $row.find('.task-desc-suffix').val().trim();
+                var $row = $(this);
+                var titleSuffix = $row.find('.task-title-suffix').val().trim();
+                var sure = $row.find('.task-hours').val().trim();
+                var descSuffix = $row.find('.task-desc-suffix').val().trim();
+
+                if (index < page.tasks.length) {
+                    // Mevcut task'ı güncelle (oluşturulmamışsa)
+                    if (!page.tasks[index].created) {
+                        page.tasks[index].titleSuffix = titleSuffix;
+                        page.tasks[index].sure = sure;
+                        page.tasks[index].descSuffix = descSuffix;
+                    }
+                } else {
+                    // Yeni task ekle
+                    page.tasks.push({
+                        titleSuffix: titleSuffix,
+                        sure: sure,
+                        descSuffix: descSuffix,
+                        created: false
+                    });
                 }
             });
 
@@ -1996,6 +2085,20 @@
 
             // UI değişikliklerini JSON'a senkronize et
             syncUItoJson();
+
+            // Daha önce oluşturulmuş task'ların key'lerini ve oluşturulmamış task'ların index'lerini al
+            var existingKeys = [];
+            var uncreatedTaskIndices = []; // JSON'daki oluşturulmamış task'ların index'leri
+            var currentPage = loadedJsonData.pages[currentPageIndex];
+            if (currentPage && currentPage.tasks) {
+                for (var t = 0; t < currentPage.tasks.length; t++) {
+                    if (currentPage.tasks[t].created && currentPage.tasks[t].jiraKey) {
+                        existingKeys.push(currentPage.tasks[t].jiraKey);
+                    } else {
+                        uncreatedTaskIndices.push(t);
+                    }
+                }
+            }
 
             var tasks = collectTaskData();
 
@@ -2057,13 +2160,16 @@
                         }
 
                         var attachmentInfo = attachmentCount > 0 ? ' (' + attachmentCount + ' görsel eklendi)' : '';
-                        results.push({ success: true, key: result.key, summary: tasks[i].summary, attachmentInfo: attachmentInfo, taskIndex: i });
+
+                        // JSON'daki gerçek task index'ini bul
+                        var jsonTaskIndex = uncreatedTaskIndices[i];
+                        results.push({ success: true, key: result.key, summary: tasks[i].summary, attachmentInfo: attachmentInfo, taskIndex: jsonTaskIndex });
 
                         // JSON'daki task'a jiraKey ve created bilgisi ekle
-                        if (loadedJsonData && loadedJsonData.pages[currentPageIndex] && loadedJsonData.pages[currentPageIndex].tasks[i]) {
-                            loadedJsonData.pages[currentPageIndex].tasks[i].created = true;
-                            loadedJsonData.pages[currentPageIndex].tasks[i].jiraKey = result.key;
-                            loadedJsonData.pages[currentPageIndex].tasks[i].createdAt = new Date().toISOString();
+                        if (loadedJsonData && loadedJsonData.pages[currentPageIndex] && loadedJsonData.pages[currentPageIndex].tasks[jsonTaskIndex]) {
+                            loadedJsonData.pages[currentPageIndex].tasks[jsonTaskIndex].created = true;
+                            loadedJsonData.pages[currentPageIndex].tasks[jsonTaskIndex].jiraKey = result.key;
+                            loadedJsonData.pages[currentPageIndex].tasks[jsonTaskIndex].createdAt = new Date().toISOString();
                         }
 
                         // Progress'i güncelle (task tamamlandıktan sonra)
@@ -2074,13 +2180,22 @@
                     }
                 }
 
-                // Task'ları birbirine bağla
-                if (createdKeys.length > 1) {
+                // Tüm key'leri birleştir (eski + yeni)
+                // existingKeys yukarıda collectTaskData'dan önce toplandı
+                var allKeys = existingKeys.concat(createdKeys);
+
+                // Task'ları birbirine bağla (yeni task'ları hem kendi aralarında hem de eski task'larla)
+                if (createdKeys.length > 0 && allKeys.length > 1) {
                     progressBar.addClass('bg-info').removeClass('bg-primary');
                     progressText.html('<i class="bi bi-link-45deg"></i> Task\'lar birbirine bağlanıyor...');
-                    for (var x = 0; x < createdKeys.length - 1; x++) {
-                        for (var y = x + 1; y < createdKeys.length; y++) {
-                            await linkIssues(createdKeys[x], createdKeys[y]);
+
+                    // Yeni oluşturulan her task'ı diğer tüm task'larla bağla
+                    for (var n = 0; n < createdKeys.length; n++) {
+                        for (var a = 0; a < allKeys.length; a++) {
+                            // Kendisiyle bağlama
+                            if (createdKeys[n] !== allKeys[a]) {
+                                await linkIssues(createdKeys[n], allKeys[a]);
+                            }
                         }
                     }
                 }
@@ -2095,16 +2210,7 @@
                 }
 
                 // Sonuç mesajı oluştur
-                var html = '<strong>' + successfulTasks.length + '/' + results.length + ' task oluşturuldu</strong><br>';
-                for (var r = 0; r < results.length; r++) {
-                    if (results[r].success) {
-                        html += '<a href="' + getJiraUrl() + '/browse/' + results[r].key + '" target="_blank" class="text-decoration-none">' + results[r].key + '</a>' + (results[r].attachmentInfo || '') + ' ';
-                    }
-                }
-
-                if (createdKeys.length > 1) {
-                    html += '<br><small><i class="bi bi-link-45deg"></i> ' + createdKeys.length + ' task bağlandı</small>';
-                }
+                var html = '<strong>' + successfulTasks.length + '/' + results.length + ' task oluşturuldu</strong>';
 
                 var hasError = results.some(function(r) { return !r.success; });
 
@@ -2121,12 +2227,8 @@
                         });
                     }
 
-                    // Sonraki sayfa varsa geçiş öner
-                    if (currentPageIndex < loadedJsonData.pages.length - 1) {
-                        html += '<br><button class="btn btn-sm btn-outline-primary mt-2" onclick="selectPage(' + (currentPageIndex + 1) + ')">Sonraki Sayfaya Geç <i class="bi bi-arrow-right"></i></button>';
-                    } else {
-                        html += '<br><span class="badge bg-success mt-2">Tüm sayfalar tamamlandı!</span>';
-                    }
+                    // UI'ı güncelle - oluşturulan task'ları yeşil göster
+                    loadPageTasks(loadedJsonData.pages[currentPageIndex]);
                 } else {
                     html += '<br><small class="text-danger">Bazı tasklar oluşturulamadı</small>';
                 }
@@ -2157,6 +2259,12 @@
 
             $('#taskTableBody tr').each(function() {
                 var $row = $(this);
+
+                // Zaten oluşturulmuş task'ları atla (yeşil satırlar)
+                if ($row.hasClass('table-success')) {
+                    return; // continue
+                }
+
                 var rowId = $row.data('id');
 
                 // Sadece suffix değerlerini al (prefix artık tabloda yok)
